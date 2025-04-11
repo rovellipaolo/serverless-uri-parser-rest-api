@@ -1,0 +1,14 @@
+{
+    "title": "StatusResponse",
+    "description": "The REST API status response",
+    "type": "object",
+    "required": [
+        "message"
+    ],
+    "properties": {
+        "message": {
+            "description": "The status description",
+            "type": "string"
+        }
+    }
+}

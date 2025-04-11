@@ -1,0 +1,14 @@
+{
+    "title": "ParseRequest",
+    "description": "The URI parse request",
+    "type": "object",
+    "required": [
+        "uri"
+    ],
+    "properties": {
+        "uri": {
+            "description": "The URI to be parsed",
+            "type": "string"
+        }
+    }
+}

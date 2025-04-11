@@ -1,0 +1,19 @@
+{
+    "title": "ErrorResponse",
+    "description": "The error response",
+    "type": "object",
+    "required": [
+        "error",
+        "message"
+    ],
+    "properties": {
+        "error": {
+            "description": "The error type, such as Bad Request or Internal Server Error",
+            "type": "string"
+        },
+        "message": {
+            "description": "The error message",
+            "type": "string"
+        }
+    }
+}

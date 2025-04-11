@@ -1,0 +1,42 @@
+{
+    "title": "ParseResponse",
+    "description": "The URI parse response",
+    "type": "object",
+    "required": [
+        "raw"
+    ],
+    "properties": {
+        "fragment": {
+            "description": "The fragment identifier of the URI, if any",
+            "type": "string"
+        },
+        "host": {
+            "description": "The hostname of the URI, if any",
+            "type": "string"
+        },
+        "port": {
+            "description": "The port part of the URI, if any",
+            "type": "integer"
+        },
+        "path": {
+            "description": "The path part of the URI, if any",
+            "type": "string"
+        },
+        "query": {
+            "description": "The query part of the URI, if any",
+            "type": "string"
+        },
+        "raw": {
+            "description": "The raw URI as a string",
+            "type": "string"
+        },
+        "scheme": {
+            "description": "The scheme part of the URI, if any",
+            "type": "string"
+        },
+        "userinfo": {
+            "description": "The userinfo part of the URI, if any",
+            "type": "string"
+        }
+    }
+}

@@ -1,0 +1,203 @@
+service: uriparser-api
+
+frameworkVersion: "3"
+
+plugins:
+  - serverless-apigateway-service-proxy
+  #- serverless-offline
+  - serverless-plugin-log-retention
+  - serverless-python-requirements
+  - '@kakkuk/serverless-aws-apigateway-documentation'
+
+provider:
+  name: aws
+  #deploymentBucket:
+  #  name: my-serverless-artifacts-repository
+  #  serverSideEncryption: AES256
+  deploymentMethod: direct
+  runtime: python3.11
+  stage: ${opt:stage, "local"}
+  region: ${opt:region, "eu-west-1"}
+  stackName: ${self:service}-${opt:stage, self:provider.stage}
+  stackTags:
+    Application: "URI Parser REST API"
+    Repository: "https://github.com/rovellipaolo/serverless-uri-parser-rest-api"
+    Stage: ${opt:stage, self:provider.stage}
+    Version: ${param:version, ""}
+  apiGateway:
+    stage: ${opt:stage, self:provider.stage}
+    metrics: true
+  logs:
+    restApi: true
+
+package:
+  patterns:
+    - '!./**'
+    - ./src/**
+    - '!./src/layers/**'
+
+custom:
+  apiGatewayServiceProxies:
+    - s3:
+        path: /api
+        method: get
+        authorizationType: AWS_IAM
+        action: GetObject
+        bucket: ${self:service}-${opt:stage, self:provider.stage}-storage
+        key: openapi.json
+  documentation:
+    api:
+      info:
+        title: ${self:service}
+        description: REST API to parse URIs
+        version: ${param:version, ""}
+    models:
+      - name: ErrorResponse
+        contentType: application/json
+        schema: ${file(openapi/models/error_response.json)}
+      - name: ParseRequest
+        contentType: application/json
+        schema: ${file(openapi/models/parse_request.json)}
+      - name: ParseResponse
+        contentType: application/json
+        schema: ${file(openapi/models/parse_response.json)}
+      - name: StatusResponse
+        contentType: application/json
+        schema: ${file(openapi/models/status_response.json)}
+    securitySchemes:
+      sigv4:
+        type: apiKey
+        name: Authorization
+        in: header
+        x-amazon-apigateway-authtype: awsSigv4
+  logRetentionInDays: 7
+  #serverless-offline:
+  #  useDocker: true
+
+layers:
+  helpers:
+    path: src/layers
+    name: ${self:service}-${opt:stage, self:provider.stage}-helpers
+    description: "Helpers for the uriparser-api Lambda functions"
+    compatibleRuntimes:
+      - python3.11
+    package:
+      patterns:
+        - ./**
+
+functions:
+  Parse:
+    name: ${self:service}-${opt:stage, self:provider.stage}-parse
+    memorySize: 128
+    timeout: 10
+    handler: src/parse.handler
+    layers:
+      - !Ref HelpersLambdaLayer
+    events:
+      - http:
+          path: api/parse
+          method: post
+          authorizer: aws_iam
+          integration: lambda-proxy
+          documentation:
+            description: "Parse a given URI"
+            queryParams:
+              - name: force
+                description: "Whether the parsing should be forced, even if the URI is not recognized as valid"
+                required: false
+                schema:
+                  type: boolean
+                  default: false
+            requestBody:
+              description: "A JSON containing the URI to be parsed"
+            requestModels:
+              application/json: ParseRequest
+            methodResponses:
+              - statusCode: 200
+                responseModels:
+                  application/json: ParseResponse
+              - statusCode: 400
+                responseModels:
+                  application/json: ErrorResponse
+              - statusCode: 500
+                responseModels:
+                  application/json: ErrorResponse
+
+  GetStatus:
+    name: ${self:service}-${opt:stage, self:provider.stage}-mock
+    handler: src/mock.handler  # NOTE: This Lambda function does not exist, the HTTP response is mocked below!
+    events:
+      - http:
+          path: api/status
+          method: get
+          authorizer: aws_iam
+          integration: mock
+          request:
+            template:
+              application/json: "{\n    \"statusCode\": 200\n}"
+          response:
+            statusCodes:
+              200:
+                pattern: ""
+                template: "{\n    \"message\": \"REST API up and running... long live and prosper!\"\n}"
+          documentation:
+            description: "Check the status of the REST API"
+            methodResponses:
+              - statusCode: 200
+                responseModels:
+                  application/json: StatusResponse
+
+resources:
+  Resources:
+    ApiGatewayRestApi:
+      Type: AWS::ApiGateway::RestApi
+      Properties:
+        Name: ${self:service}-${opt:stage, self:provider.stage}-apigateway
+        Description: "REST API to parse URIs"
+
+    ApiGateway5XXErrorAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: "API Gateway ${self:service}-${opt:stage, self:provider.stage}-apigateway 5XXError Too High"
+        AlarmDescription: "Too many 5XX errors in URI Parser API Gateway"
+        ActionsEnabled: "false"
+        AlarmActions:
+          - !Ref "AWS::NoValue"
+        InsufficientDataActions:
+          - !Ref "AWS::NoValue"
+        OKActions:
+          - !Ref "AWS::NoValue"
+        Namespace: AWS/ApiGateway
+        MetricName: 5XXError
+        Statistic: Sum
+        Dimensions:
+          - Name: ApiName
+            Value: ${self:service}-${opt:stage, self:provider.stage}-apigateway
+        Period: 300
+        EvaluationPeriods: 4
+        DatapointsToAlarm: 2
+        Threshold: 10
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
+
+    S3Bucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        AccessControl: Private
+        BucketName: ${self:service}-${opt:stage, self:provider.stage}-storage
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: "AES256"
+        PublicAccessBlockConfiguration:
+          RestrictPublicBuckets: true
+        VersioningConfiguration:
+          Status: Enabled
+        LifecycleConfiguration:
+          Rules:
+            - Id: DeletionRule
+              Status: Enabled
+              NoncurrentVersionExpiration:
+                NewerNoncurrentVersions: 2
+                NoncurrentDays: 7
+      DeletionPolicy: Retain
